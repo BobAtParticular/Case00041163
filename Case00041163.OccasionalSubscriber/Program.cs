@@ -1,6 +1,11 @@
 ﻿using System;
 using System.Threading.Tasks;
 using NServiceBus;
+using NServiceBus.Extensibility;
+using NServiceBus.Raw;
+using NServiceBus.Routing;
+using NServiceBus.Transport;
+using NServiceBus.Unicast.Transport;
 
 class Program
 {
@@ -8,24 +13,26 @@ class Program
     {
         Console.Title = "Case00041163.OccasionalSubscriber";
 
-        var endpointConfiguration = new EndpointConfiguration(Console.Title);
-        endpointConfiguration.SendFailedMessagesTo("error");
-        endpointConfiguration.EnableInstallers();
-        endpointConfiguration.UsePersistence<InMemoryPersistence>();
+        var endpointConfiguration = RawEndpointConfiguration.Create(Console.Title, (context, messages) => Task.CompletedTask, "error");
 
-        var transport = endpointConfiguration.UseTransport<MsmqTransport>();
+        endpointConfiguration.UseTransport<MsmqTransport>();
 
-        transport.Routing().RegisterPublisher(typeof(MyEvent), "Case00041163.Publisher");
-
-        var endpointInstance = await Endpoint.Start(endpointConfiguration)
+        var endpointInstance = await RawEndpoint.Start(endpointConfiguration)
             .ConfigureAwait(false);
 
-        Console.WriteLine("Press any key to exit");
-        Console.ReadKey();
+        var subscriptionMessage = ControlMessageFactory.Create(MessageIntentEnum.Subscribe);
 
-        await endpointInstance.Unsubscribe<MyEvent>().ConfigureAwait(false);
+        subscriptionMessage.Headers[Headers.SubscriptionMessageType] = typeof(MyEvent).AssemblyQualifiedName;
+        subscriptionMessage.Headers[Headers.ReplyToAddress] = "Case00041163.OccasionalSubscriber@FAKEPC";
+        subscriptionMessage.Headers[Headers.SubscriberTransportAddress] = "Case00041163.OccasionalSubscriber@FAKEPC";
+        subscriptionMessage.Headers[Headers.SubscriberEndpoint] = "Case00041163.OccasionalSubscriber";
+        subscriptionMessage.Headers[Headers.TimeSent] = DateTimeExtensions.ToWireFormattedString(DateTime.UtcNow);
+        subscriptionMessage.Headers[Headers.NServiceBusVersion] = "5.6.4";
 
-        await endpointInstance.Stop()
-            .ConfigureAwait(false);
+        var operation = new TransportOperation(subscriptionMessage, new UnicastAddressTag("Case00041163.Publisher"));
+
+        await endpointInstance.Dispatch(new TransportOperations(operation), new TransportTransaction(), new ContextBag()).ConfigureAwait(false);
+
+        await endpointInstance.Stop().ConfigureAwait(false);
     }
 }
