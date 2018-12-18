@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading.Tasks;
+using Case00041163.Publisher;
 using NServiceBus;
 using NServiceBus.Persistence;
 using NServiceBus.Persistence.Legacy;
@@ -15,6 +16,11 @@ class Program
         endpointConfiguration.EnableInstallers();
         endpointConfiguration.UsePersistence<InMemoryPersistence>();
         endpointConfiguration.UsePersistence<MsmqPersistence, StorageType.Subscriptions>();
+
+        var pipeline = endpointConfiguration.Pipeline;
+        pipeline.Register(
+            behavior: new DispatchPublishedMessagesWithTtbrBehavior(),
+            description: "Adds TTBR to messages sent to Case00041163.OccasionalSubscriber");
 
         var endpointInstance = await Endpoint.Start(endpointConfiguration)
             .ConfigureAwait(false);
